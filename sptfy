@@ -1,0 +1,352 @@
+#!/bin/bash
+
+# author: Simon Olfs
+# lisence: AGPLv3
+# change-log: 30.04.2023 Simon Olfs: Version 0.1 created
+
+# Initial option values
+opt_h=0                             # -h help
+opt_v=0                             # -v version
+opt_d=0                             # -d devices
+opt_d_val=''                        # (default) value for -d argument
+opt_p=0                             # -p playlist
+opt_p_val='Release Radar'           # (default) value for -p argument
+
+# Some global variables
+set -o nounset                      # bash: abort on undefined variables
+VERSION="0.1"                       # current version of the script
+PROGNAME=${0##*/}                   # same as PROGNAME=$(basename "$0")
+root="/home/simon/prog/sptfy"       # root for of the programm
+config="$root/.sptfyrc"             # configuration file
+
+# Exit Codes
+EXIT_OK=0
+EXIT_USAGE=64                       # analogously to EX_USAGE in /usr/include/sysexits.h
+EXIT_INTERNAL_ERROR=70              # EX_INTERNAL_ERROR in sysexits.h
+EXIT_GENERAL_ERROR=80               # nothing similar in sysexits.h
+
+# Output help.
+usage() {
+cat <<-EOF
+Usage: $PROGNAME [<OPTIONS>] <arguments>
+Controle spotify devices
+
+Options:
+   -h                            Print this help
+   -v                            Print version number
+   -d [select]                   List available devices. Default device is colored
+   -p <name>                     Start a playlist by name. Default is Release Radar
+
+Examples:
+    $PROGNAME                        Resume play on active device
+    $PROGNAME -d                     List all active devices
+    $PROGNAME -d select              List all active devices an select a default device
+    $PROGNAME -p "Discover Weekly"   Play the discover weekly playlist on default device
+EOF
+}
+
+# Print version information.
+version() {
+    echo "$PROGNAME $VERSION"
+}
+
+# Handles events and logs them
+#
+# @param $1 TYPE The type of the event: INFO, WARNING, ERROR, USAGE
+# @param $2 LINE Line where the event occured
+# @param $3 MSG The message of the event
+# @param $4 ERROR_CODE Optional parameter for the errorcode to exit with
+event_handler() {                           
+    # check for http error response events
+    if [ $# -eq 1 ]; then
+        local response=$(cat -)
+        if [ -n "$response" ]; then                                                                                                                            
+            local message=$(echo $response | jq '.error.message')
+            local status_code=$(echo $response | jq '.error.status')
+            event_handler ERROR $1 "$message" $status_code
+        fi     
+        return
+    fi
+
+    local TYPE="$1" LINE="$2" MSG="$3" ERROR_CODE=""
+    if [ $# -eq 4 ]; then # only error events have an error code
+        local ERROR_CODE="$4"
+    fi
+
+    case $TYPE in 
+        INFO) write_log_entry info "$MSG" ;;
+        WARNING)                    # Print warning to stderr, but do not abort.
+            echo -e >&2 "\x1b[43m\x1b[30m Warning \x1b[0m $MSG"
+            write_log_entry warning "Line: $LINE; $MSG" ;;
+        ERROR)                      # Print error message and abort with error code.
+            echo -e >&2 "\x1b[41m\x1b[30m Error \x1b[0m $MSG"
+            write_log_entry err "Line: $LINE; Code: $ERROR_CODE; Msg: $MSG"
+            exit $ERROR_CODE ;;
+        USAGE)                      # Print help info and log error
+            echo >&2 "Use option -h for help."
+            event_handler ERROR $LINE "$MSG" $EXIT_USAGE ;;
+        *) ;;
+    esac
+} 
+
+# Write an log entry to journal log
+# $1 Type of entry, $2 Message to write
+write_log_entry() {
+    logger -p $1 "${PROGNAME}[$1]: $2"                                                                                                                                                                                                        
+}
+
+
+# checks and handles the passed arguments
+validate_arguments() {
+    if [ $# -gt 1 ]; then
+        event_handler USAGE $LINENO "Invalid arguments: $@"
+    fi
+
+    argument=$1                     # argument to handle
+    #if [ $argument == "init" ]; then
+        #init 
+        #exit $EXIT_OK
+    #fi
+
+    event_handler USAGE $LINENO "Invalid argument: $argument"
+}
+
+validate_options_or_exit() {
+    local opt opt_count=0
+    while getopts :hvd:p: opt
+    do
+        (( opt_count++ ))
+        case $opt in
+            h) opt_h=1; (( opt_count-- )) ;;
+            v) opt_v=1; (( opt_count-- )) ;;
+            d) opt_d=1; opt_d_val=$OPTARG ;;
+            p) opt_p=1; opt_p_val=$OPTARG ;;
+            :) case $OPTARG in 
+                    d) opt_d=1; continue ;;
+                    p) opt_p=1; continue ;;
+                    *) event_handler USAGE $LINENO "Missing argument for option '-$OPTARG'" ;;
+                esac ;;
+           \?) event_handler USAGE $LINENO "Invalid option $OPTARG" ;;
+            *) event_handler ERROR $LINENO "Internal error, Line: $LINENO" $EXIT_INTERNAL_ERROR ;;
+        esac
+    done
+}
+
+main() {
+    validate_options_or_exit "$@"
+    shift $((OPTIND - 1))
+
+    # -h execution
+    if [ $opt_h -eq 1 ]; then 
+        usage || exit $EXIT_GENERAL_ERROR
+        exit $EXIT_OK
+    fi
+    
+    # -v execution
+    if [ $opt_v -eq 1 ]; then 
+        version || exit $EXIT_GENERAL_ERROR
+        exit $EXIT_OK
+    fi
+    
+    # -d execution
+    if [ $opt_d -eq 1 ]; then 
+        listDevices || exit $EXIT_GENERAL_ERROR
+        exit $EXIT_OK
+    fi
+
+    # -p execution
+    if [ $opt_p -eq 1 ]; then 
+        startPlayback $(search playlist "$opt_p_val") || exit $EXIT_GENERAL_ERROR
+        exit $EXIT_OK
+    fi
+
+    # handle arguments
+    if [ $# -gt 0 ]; then
+        validate_arguments "$@"
+        exit $EXIT_OK
+    fi
+
+    resumePlayback
+}
+
+# Shows the available devices as list. The default device is marked blue
+listDevices() {
+    if [ -n "$opt_d_val" ] && [ "$opt_d_val" != "select" ]; then 
+        event_handler USAGE $LINENO "Invalid option $opt_d_val"
+    fi
+
+    local access_token=$(get_access_token) 
+    response=$(curl -s --request GET \
+        --url "https://api.spotify.com/v1/me/player/devices" \
+        --header "Authorization: Bearer $access_token")
+    local devices=$(echo $response | jq '.devices | length')
+    if [ "$devices" == "0" ]; then
+        event_handler WARNING $LINENO "No active devices"
+        return
+    fi
+
+    local device id is_active name type volume default_device
+    printf "%-5s%-42s%-10s%-25s%-13s%-10s\n" "#" "ID" "ACTIVE" "NAME" "TYPE" "VOLUME"
+    for (( i=0; i < $devices ; i++ ))
+    do
+        device=$(echo $response | jq -r ".devices[$i]")
+        id=$(echo $device | jq -r ".id")
+        is_active=$(echo $device | jq -r ".is_active")
+        name=$(echo $device | jq -r ".name")
+        type=$(echo $device | jq -r ".type")
+        volume=$(echo $device | jq -r ".volume_percent")
+        default_device=$(grep '^Device' "$config" | cut -d' ' -f2)
+        if [ "$default_device" == "$id" ]; then
+            printf "\x1b[34m%-5s%-42s%-10s%-25s%-13s%-10s\x1b[0m\n" "$(($i+1))" "$id" "$is_active" "$name" "$type" "$volume"
+        else
+            printf "%-5s%-42s%-10s%-25s%-13s%-10s\n" "$(($i+1))" "$id" "$is_active" "$name" "$type" "$volume"
+        fi
+    done
+
+    if [ -n "$opt_d_val" ]; then 
+        if [ "$opt_d_val" != "select" ]; then 
+            event_handler USAGE $LINENO "Invalid option $opt_d_val"
+        fi
+
+        read -p "Select a new default device: " id
+        id=$(echo $response | jq -r ".devices[$(($id-1))].id")
+        sed -E -i "s/^Device.*/Device $id/" $config
+        return
+    fi
+}
+
+# Get spotify catalog information
+# @param type The item type to search: album, artist, playlist, track, 
+#             show, episode, audiobook
+# @param query The search query
+search() {
+    local endpoint query url response uri
+    endpoint="https://api.spotify.com/v1/search"
+    query=$(echo $2 | sed "s/[[:space:]]/%20/g")
+    url="$endpoint?q=$query&type=$1&access_token=$(get_access_token)"
+    response=$(curl -s --location $url)
+    uri=$(echo $response | jq -r ".playlists.items[] | select(.name | test(\"$2\")) | .uri")
+    echo $uri
+}
+
+# Resumes playing on active device
+resumePlayback() {
+    local access_token=$(get_access_token) 
+    curl -s --location --request PUT "https://api.spotify.com/v1/me/player/play" \
+        --header "Authorization: Bearer $access_token" | event_handler $LINENO
+}
+
+
+# Start a new context on the active device
+# @param uri The spotify URI
+startPlayback() {
+    access_token=$(get_access_token) 
+    endpoint="https://api.spotify.com/v1/me/player/play"
+    url="$endpoint?&access_token=$access_token"
+    curl -s --location --request PUT $url \
+    --header 'Content-Type: application/json' \
+    --data "{
+        \"context_uri\": \"$1\",
+        \"position_ms\": 0
+    }" | event_handler $LINENO
+}
+
+# Gets the access token from the config or start the 
+# OAuth 2.0 authorization code flow
+# @return A valid access token
+get_access_token() {
+    local access_token=$(grep '^AccessToken' "$config" | cut -d' ' -f2)
+    local expire_time=$(grep '^ExpireTime' "$config" | cut -d' ' -f2)
+
+    # Check if authorization code flow is necessary
+    if [ "$access_token" == "AccessToken" ]; then
+        status=$(authorizationCodeFlow)
+        if [ $status -eq 0 ]; then
+            access_token=$(grep '^AccessToken' "$config" | cut -d' ' -f2)
+        else
+            event_handler ERROR $LINENO "OAuth 2.0: Authorization code flow failed" $status
+        fi
+    fi
+
+    # Check if access token is expired
+    if [ $(date "+%s") -gt $expire_time ]; then
+        status=$(refresh_token)
+        if [ $status -eq 0 ]; then
+            access_token=$(grep '^AccessToken' "$config" | cut -d' ' -f2)
+        else
+            event_handler ERROR $LINENO "OAuth 2.0: Refreshing access token failed" $status
+        fi
+    fi
+    echo $access_token
+}
+
+# Implements the OAuth 2.0 authorization code flow
+# @return 0 if successful, otherwise errorcode > 0
+authorizationCodeFlow() {
+    if [[ ! -f $config ]]; then 
+        event_handler ERROR $LINENO "configuration file does not exist" $EXIT_GENERAL_ERROR
+    fi
+    local auth_url token_url redirect_uri port client_id client_secret scope response_type final_url
+    auth_url=$(grep '^AuthURL' "$config" | cut -d' ' -f2)
+    token_url=$(grep '^TokenURL' "$config" | cut -d' ' -f2)
+    redirect_uri=$(grep '^RedirectUri' "$config" | cut -d' ' -f2)
+    port=$(echo $redirect_uri | grep -E -o "[0-9]{4}")
+    client_id=$(grep '^ClientId' "$config" | cut -d' ' -f2)
+    client_secret=$(grep '^ClientSecret' "$config" | cut -d' ' -f2)
+    scope=$(grep '^Scope' "$config" |  sed 's/Scope //' | sed 's/ /%20/g')
+    response_type=$(grep '^ResponseType' "$config" | cut -d' ' -f2)
+    final_url="$auth_url?client_id=$client_id&redirect_uri=$redirect_uri&scope=$scope&response_type=$response_type"
+
+    local response code
+    brave-browser-nightly --incognito --chrome-script $final_url 1>/dev/null &
+    response=$({ echo -e "HTTP/1.1 200 OK\r\n$(date)\r\n\r\n";echo "<h1>Close the browser</h1>"; } | netcat -l -p $port)
+    code=$(echo "$response" | grep GET | cut -d' ' -f 2 | cut -d'=' -f 2)
+    sed -E -i "s/^Code.*/Code $code/" $config
+    
+    response=$(curl -s $token_url --http1.1 \
+    --header "Content-Type:application/x-www-form-urlencoded" \
+    --header "Authorization: Basic $(echo -n $client_id:$client_secret | base64 -w0)" \
+    --data-urlencode "code=$code" \
+    --data-urlencode "redirect_uri=$redirect_uri" \
+    --data-urlencode "grant_type=authorization_code")
+
+    local expire_time access_token refresh_toekn
+    expire_time=$(date -d "+$(echo $response | jq -r '.expires_in') seconds" "+%s")
+    sed -E -i "s/^ExpireTime.*/ExpireTime $expire_time/" $config
+
+    access_token=$(echo $response | jq -r '.access_token')
+    sed -E -i "s/^AccessToken.*/AccessToken $access_token/" $config
+
+    refresh_token=$(echo $response | jq -r '.refresh_token')
+    sed -E -i "s/^RefreshToken.*/RefreshToken $refresh_token/" $config
+    
+    event_handler INFO $LINENO "OAuth2.0, authorizationCodeFlow access granted"
+    echo 0
+}
+
+# Refresh the access token
+refresh_token() {
+    local token_url client_id client_secret refresh_token response
+    token_url=$(grep '^TokenURL' "$config" | cut -d' ' -f2)
+    client_id=$(grep '^ClientId' "$config" | cut -d' ' -f2)
+    client_secret=$(grep '^ClientSecret' "$config" | cut -d' ' -f2)
+    refresh_token=$(grep '^RefreshToken' "$config" | cut -d' ' -f2)
+
+    response=$(curl -s $token_url --http1.1 \
+    --header "Content-Type:application/x-www-form-urlencoded" \
+    --header "Authorization: Basic $(echo -n $client_id:$client_secret | base64 -w0)" \
+    --data-urlencode "grant_type=refresh_token" \
+    --data-urlencode "refresh_token=$refresh_token")
+
+    local expire_time access_token
+    expire_time=$(date -d "+$(echo $response | jq -r '.expires_in') seconds" "+%s")
+    sed -E -i "s/^ExpireTime.*/ExpireTime $expire_time/" $config
+
+    access_token=$(echo $response | jq -r '.access_token')
+    sed -E -i "s/^AccessToken.*/AccessToken $access_token/" $config
+
+    event_handler INFO $LINENO "Access token refreshed"
+    echo 0
+}
+
+main "$@"
