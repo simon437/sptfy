@@ -74,13 +74,13 @@ event_handler() {
     fi
 
     case $TYPE in 
-        INFO) write_log_entry info "$MSG" ;;
+        INFO) write_log_entry info "$MSG; Line $LINE" ;;
         WARNING)                    # Print warning to stderr, but do not abort.
             echo -e >&2 "\x1b[43m\x1b[30m Warning \x1b[0m $MSG"
-            write_log_entry warning "Line: $LINE; $MSG" ;;
+            write_log_entry warning "$MSG; Line: $LINE" ;;
         ERROR)                      # Print error message and abort with error code.
             echo -e >&2 "\x1b[41m\x1b[30m Error \x1b[0m $MSG"
-            write_log_entry err "Line: $LINE; Code: $ERROR_CODE; Msg: $MSG"
+            write_log_entry err "$MSG; Line: $LINE; Code: $ERROR_CODE"
             exit $ERROR_CODE ;;
         USAGE)                      # Print help info and log error
             echo >&2 "Use option -h for help."
@@ -135,6 +135,10 @@ validate_options_or_exit() {
 main() {
     validate_options_or_exit "$@"
     shift $((OPTIND - 1))
+    status=$(validateDevices)
+    if [ $status -gt 0 ]; then
+        exit $EXIT_GENERAL_ERROR
+    fi
 
     # -h execution
     if [ $opt_h -eq 1 ]; then 
@@ -169,6 +173,49 @@ main() {
     resumePlayback
 }
 
+validateDevices() {
+    local access_token=$(get_access_token) 
+
+    # check for devices
+    local response=$(curl -s --request GET \
+        --url "https://api.spotify.com/v1/me/player/devices" \
+        --header "Authorization: Bearer $access_token")
+    local devices=$(echo $response | jq '.devices | length')
+    event_handler INFO $LINENO "[devices] Validate devices(), Nr. of Devices: $devices"
+    if [ "$devices" == "0" ]; then
+        event_handler WARNING $LINENO "No active devices"
+        echo 1; return
+    fi
+    
+    # search for active device
+    for (( i=0; i < $devices ; i++ ))
+    do 
+        local device=$(echo $response | jq ".devices[$i]")
+        local is_active=$(echo $device | jq -r ".is_active")
+        if [ "$is_active" == "true" ]; then
+            event_handler INFO $LINENO "[devices] Active device found: $(echo $device | jq -r ".name")"
+            echo 0; return
+        fi
+    done
+
+    # activate default device
+    local default_device=$(grep '^Device ' "$config" | cut -d' ' -f2)
+    if [ -n default_device ] && [ "$default_device" != "Device" ]; then
+        local access_token=$(get_access_token) 
+        curl -s --location --request PUT 'https://api.spotify.com/v1/me/player' \
+        --header 'Content-Type: application/json' \
+        --header "Authorization: Bearer $access_token" \
+        --data "{
+            \"device_ids\": [
+                \"$default_device\"
+            ]
+        }" | event_handler $LINENO
+        event_handler INFO $LINENO "[devices] Activated default device $default_device, $(echo $device | jq -r ".name")"
+        echo 0; return
+    fi
+    echo 1
+}
+
 # Shows the available devices as list. The default device is marked blue
 listDevices() {
     if [ -n "$opt_d_val" ] && [ "$opt_d_val" != "select" ]; then 
@@ -176,7 +223,7 @@ listDevices() {
     fi
 
     local access_token=$(get_access_token) 
-    response=$(curl -s --request GET \
+    local response=$(curl -s --request GET \
         --url "https://api.spotify.com/v1/me/player/devices" \
         --header "Authorization: Bearer $access_token")
     local devices=$(echo $response | jq '.devices | length')
@@ -197,9 +244,11 @@ listDevices() {
         volume=$(echo $device | jq -r ".volume_percent")
         default_device=$(grep '^Device' "$config" | cut -d' ' -f2)
         if [ "$default_device" == "$id" ]; then
-            printf "\x1b[34m%-5s%-42s%-10s%-25s%-13s%-10s\x1b[0m\n" "$(($i+1))" "$id" "$is_active" "$name" "$type" "$volume"
+            printf "\x1b[34m%-5s%-42s%-10s%-25s%-13s%-10s\x1b[0m\n" \
+                "$(($i+1))" "$id" "$is_active" "$name" "$type" "$volume"
         else
-            printf "%-5s%-42s%-10s%-25s%-13s%-10s\n" "$(($i+1))" "$id" "$is_active" "$name" "$type" "$volume"
+            printf "%-5s%-42s%-10s%-25s%-13s%-10s\n" \
+                "$(($i+1))" "$id" "$is_active" "$name" "$type" "$volume"
         fi
     done
 
@@ -225,21 +274,28 @@ search() {
     query=$(echo $2 | sed "s/[[:space:]]/%20/g")
     url="$endpoint?q=$query&type=$1&access_token=$(get_access_token)"
     response=$(curl -s --location $url)
+    event_handler INFO $LINENO "[search] $endpoint; Query: q=$query&type=$1"
     uri=$(echo $response | jq -r ".playlists.items[] | select(.name | test(\"$2\")) | .uri")
-    echo $uri
+    echo $uri | cut -d' ' -f1
 }
 
 # Resumes playing on active device
 resumePlayback() {
     local access_token=$(get_access_token) 
-    curl -s --location --request PUT "https://api.spotify.com/v1/me/player/play" \
+    local endpoint="https://api.spotify.com/v1/me/player/play"
+    curl -s --location --request PUT $endpoint \
         --header "Authorization: Bearer $access_token" | event_handler $LINENO
+    event_handler INFO $LINENO "[play] $endpoint; Resume playing on active device"
 }
 
 
 # Start a new context on the active device
 # @param uri The spotify URI
 startPlayback() {
+    if [ $# != 1 ]; then
+        event_handler ERROR $LINENO "No uri passed" $EXIT_INTERNAL_ERROR
+    fi
+
     access_token=$(get_access_token) 
     endpoint="https://api.spotify.com/v1/me/player/play"
     url="$endpoint?&access_token=$access_token"
@@ -249,6 +305,7 @@ startPlayback() {
         \"context_uri\": \"$1\",
         \"position_ms\": 0
     }" | event_handler $LINENO
+    event_handler INFO $LINENO "[play] $endpoint; URI: $1"
 }
 
 # Gets the access token from the config or start the 
