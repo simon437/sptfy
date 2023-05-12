@@ -200,8 +200,8 @@ validateDevices() {
 
     # activate default device
     local default_device=$(grep '^Device ' "$config" | cut -d' ' -f2)
-    if [ -n default_device ] && [ "$default_device" != "Device" ]; then
-        local access_token=$(get_access_token) 
+    if [ -n "$default_device" ] && [ "$default_device" != "Device" ]; then
+        echo "L:$LINENO; Default Device: $default_device"
         curl -s --location --request PUT 'https://api.spotify.com/v1/me/player' \
         --header 'Content-Type: application/json' \
         --header "Authorization: Bearer $access_token" \
@@ -212,6 +212,22 @@ validateDevices() {
         }" | event_handler $LINENO
         event_handler INFO $LINENO "[devices] Activated default device $default_device, $(echo $device | jq -r ".name")"
         echo 0; return
+    fi
+
+    # activate first device found
+    if [ -n "$response" ]; then
+        device_id=$(echo $response | jq -r ".devices[0].id")
+        device_name=$(echo $response | jq -r ".devices[0].name")
+
+        curl -s --location --request PUT 'https://api.spotify.com/v1/me/player' \
+        --header 'Content-Type: application/json' \
+        --header "Authorization: Bearer $access_token" \
+        --data "{
+            \"device_ids\": [
+                \"$device_id\"
+            ]
+        }" | event_handler $LINENO
+        event_handler INFO $LINENO "[devices] Activated first device \"$device_name\"; ID:$device_id)"
     fi
     echo 1
 }
