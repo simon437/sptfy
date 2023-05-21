@@ -184,7 +184,20 @@ validateDevices() {
     event_handler INFO $LINENO "[devices] Validate devices(), Nr. of Devices: $devices"
     if [ "$devices" == "0" ]; then
         event_handler WARNING $LINENO "No active devices"
-        echo 1; return
+        
+        # check for spotifyd
+        local spotifyd=$(grep '^spotifyd' "$config" | cut -d' ' -f2)
+        if [ "$spotifyd" == "true" ]; then
+            if [ ! $(pgrep "spotifyd") ]; then
+                spotifyd &
+                event_handler INFO $LINENO "[devices] start spotifyd"
+                sleep 2
+            fi
+        fi
+
+        if [ ! $(pgrep "spotifyd") ]; then
+            echo 1; return
+        fi
     fi
     
     # search for active device
@@ -215,6 +228,9 @@ validateDevices() {
     fi
 
     # activate first device found
+    local response=$(curl -s --request GET \
+        --url "https://api.spotify.com/v1/me/player/devices" \
+        --header "Authorization: Bearer $access_token")
     if [ -n "$response" ]; then
         device_id=$(echo $response | jq -r ".devices[0].id")
         device_name=$(echo $response | jq -r ".devices[0].name")
@@ -228,6 +244,7 @@ validateDevices() {
             ]
         }" | event_handler $LINENO
         event_handler INFO $LINENO "[devices] Activated first device \"$device_name\"; ID:$device_id)"
+        echo 0; return
     fi
     echo 1
 }
