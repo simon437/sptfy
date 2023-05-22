@@ -170,9 +170,37 @@ main() {
         exit $EXIT_OK
     fi
 
-    resumePlayback
+    status=$(getPlaybackState)
+    if [ $status == 0 ]; then
+        pausePlayback
+    else
+        resumePlayback
+    fi
 }
 
+# Pause playback on the user's accounts
+pausePlayback() {
+    local access_token=$(get_access_token) 
+    curl -s --location --request PUT 'https://api.spotify.com/v1/me/player/pause' \
+    --header "Authorization: Bearer $access_token" | event_handler $LINENO
+    event_handler INFO $LINENO "[devices] Pause playback"
+}
+
+# Get information about the user's current playback state
+# @return 1 if no devices is playing otherwise 0
+getPlaybackState() {
+    local access_token=$(get_access_token) 
+    local response=$(curl -s --request GET \
+        --url "https://api.spotify.com/v1/me/player" \
+        --header "Authorization: Bearer $access_token")
+    local play_state=$(echo $response | jq '.is_playing')
+    if [ "$play_state" == "true" ]; then
+        echo 0; return
+    fi
+    echo 1
+}
+
+# TODO: Write documentation
 validateDevices() {
     local access_token=$(get_access_token) 
 
