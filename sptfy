@@ -135,10 +135,6 @@ validate_options_or_exit() {
 main() {
     validate_options_or_exit "$@"
     shift $((OPTIND - 1))
-    status=$(validateDevices)
-    if [ $status -gt 0 ]; then
-        exit $EXIT_GENERAL_ERROR
-    fi
 
     # -h execution
     if [ $opt_h -eq 1 ]; then 
@@ -156,6 +152,13 @@ main() {
     if [ $opt_d -eq 1 ]; then 
         listDevices || exit $EXIT_GENERAL_ERROR
         exit $EXIT_OK
+    fi
+    
+    # From here on an active device is needed. The previous options do not need 
+    # an active device.
+    status=$(initializeDevice)
+    if [ $status -gt 0 ]; then
+        exit $EXIT_GENERAL_ERROR
     fi
 
     # -p execution
@@ -176,105 +179,117 @@ main() {
     else
         resumePlayback
     fi
+
+    #echo $(initializeDevice)
+    #echo "Available Devices: $(getAvailableDevices)"
+    #echo "Active Devices: $(echo $(getActiveDevices) | jq .)"
+    
+    
 }
 
-# Pause playback on the user's accounts
-pausePlayback() {
-    local access_token=$(get_access_token) 
-    curl -s --location --request PUT 'https://api.spotify.com/v1/me/player/pause' \
-    --header "Authorization: Bearer $access_token" | event_handler $LINENO
-    event_handler INFO $LINENO "[devices] Pause playback"
-}
+# Initialize devices
+# @return Status 0 if a device was activated otherwise 1
+initializeDevice() {
+    local active_devices=$(getActiveDevices);
+    if [ "$active_devices" == 1 ]; then # no active device found
+        
+        # start and activate spotifyd depending on the config
+        initializeSpotifyd
 
-# Get information about the user's current playback state
-# @return 1 if no devices is playing otherwise 0
-getPlaybackState() {
-    local access_token=$(get_access_token) 
-    local response=$(curl -s --request GET \
-        --url "https://api.spotify.com/v1/me/player" \
-        --header "Authorization: Bearer $access_token")
-    local play_state=$(echo $response | jq '.is_playing')
-    if [ "$play_state" == "true" ]; then
-        echo 0; return
+        # activate the default device or first available
+        local default_device=$(grep '^Device ' "$config" | cut -d' ' -f2)
+        if [ -n "$default_device" ] && [ "$default_device" != "Device" ]; then
+            local status=$(activateDevice $default_device)
+            if [ $status == 1 ]; then # failed to activate default device
+                local available_devices=$(getAvailableDevices)
+                first_available_device=$(echo $available_devices | jq -r ".devices[0].id")
+                status=$(activateDevice $first_available_device)
+                if [ $status == 1 ]; then # failed to activate first available device
+                    echo 1; return
+                fi
+            fi
+        fi
     fi
-    echo 1
+    echo 0; return
 }
 
-# TODO: Write documentation
-validateDevices() {
-    local access_token=$(get_access_token) 
+# Activates a device
+# @param device_id The id of the device to activate
+# @return Status 0 if successful or 1 if not
+activateDevice() {
+    if [ $# != 1 ]; then                # validate the parameter
+        echo 1; return
+    fi
 
-    # check for devices
+    local access_token=$(get_access_token) 
+    local device_id=$1
+
+    curl -s --location --request PUT 'https://api.spotify.com/v1/me/player' \
+    --header 'Content-Type: application/json' \
+    --header "Authorization: Bearer $access_token" \
+    --data "{
+        \"device_ids\": [
+            \"$device_id\"
+        ]
+    }" | event_handler $LINENO
+    event_handler INFO $LINENO "[devices] Activated device; ID:$device_id)"
+
+    echo 0
+}
+
+# Check if spotifyd should be startet. Can be set in the configuration file
+initializeSpotifyd() {
+    local spotifyd=$(grep '^spotifyd' "$config" | cut -d' ' -f2)
+    if [ "$spotifyd" == "true" ]; then
+        if [ ! $(pgrep "spotifyd") ]; then
+            spotifyd &
+        fi
+    fi
+    if [ ! $(pgrep "spotifyd") ]; then
+        event_handler WARNING $LINENO "[devices] Failed to start spotifyd"
+    fi
+}
+
+# Get the active devices
+# @return JSON-Formattet active devices or 1 when no devices are active
+getActiveDevices() {
+    local available_devices=$(getAvailableDevices)
+    if [ "$available_devices" == 1 ]; then
+            event_handler WARNING $LINENO "[devices] No Active device found"
+            echo 1; return
+    else
+        local active_devices='{ "devices" : [ ] }'
+        local number_of_devices=$(echo $available_devices | jq '.devices | length')
+        if [ -z $number_of_devices ]; then
+            echo 1; return
+        fi
+        for (( i=0; i < "$number_of_devices" ; i++ )); do 
+            local device=$(echo $available_devices | jq ".devices[$i]")
+            local is_active=$(echo $device | jq -r ".is_active")
+            if [ "$is_active" == "true" ]; then
+                active_devices=$(echo $active_devices | jq ".devices + [$device]")
+            fi
+        done
+        if [ "$active_devices" == '{ "devices" : [ ] }' ]; then
+            echo 1; return
+        fi
+        echo $active_devices 
+    fi
+}
+
+# Get information about a user's available devices
+# @return JSON-Formattet response of devices or in case of an error the error-code
+getAvailableDevices() {
+    local access_token=$(get_access_token) 
     local response=$(curl -s --request GET \
         --url "https://api.spotify.com/v1/me/player/devices" \
         --header "Authorization: Bearer $access_token")
     local devices=$(echo $response | jq '.devices | length')
-    event_handler INFO $LINENO "[devices] Validate devices(), Nr. of Devices: $devices"
+    event_handler INFO $LINENO "[devices] Available devices: $devices"
     if [ "$devices" == "0" ]; then
-        event_handler WARNING $LINENO "No active devices"
-        
-        # check for spotifyd
-        local spotifyd=$(grep '^spotifyd' "$config" | cut -d' ' -f2)
-        if [ "$spotifyd" == "true" ]; then
-            if [ ! $(pgrep "spotifyd") ]; then
-                spotifyd &
-                event_handler INFO $LINENO "[devices] start spotifyd"
-                sleep 2
-            fi
-        fi
-
-        if [ ! $(pgrep "spotifyd") ]; then
-            echo 1; return
-        fi
+        event_handler ERROR $LINENO "No active devices" $EXIT_GENERAL_ERROR
     fi
-    
-    # search for active device
-    for (( i=0; i < $devices ; i++ ))
-    do 
-        local device=$(echo $response | jq ".devices[$i]")
-        local is_active=$(echo $device | jq -r ".is_active")
-        if [ "$is_active" == "true" ]; then
-            event_handler INFO $LINENO "[devices] Active device found: $(echo $device | jq -r ".name")"
-            echo 0; return
-        fi
-    done
-
-    # activate default device
-    local default_device=$(grep '^Device ' "$config" | cut -d' ' -f2)
-    if [ -n "$default_device" ] && [ "$default_device" != "Device" ]; then
-        echo "L:$LINENO; Default Device: $default_device"
-        curl -s --location --request PUT 'https://api.spotify.com/v1/me/player' \
-        --header 'Content-Type: application/json' \
-        --header "Authorization: Bearer $access_token" \
-        --data "{
-            \"device_ids\": [
-                \"$default_device\"
-            ]
-        }" | event_handler $LINENO
-        event_handler INFO $LINENO "[devices] Activated default device $default_device, $(echo $device | jq -r ".name")"
-        echo 0; return
-    fi
-
-    # activate first device found
-    local response=$(curl -s --request GET \
-        --url "https://api.spotify.com/v1/me/player/devices" \
-        --header "Authorization: Bearer $access_token")
-    if [ -n "$response" ]; then
-        device_id=$(echo $response | jq -r ".devices[0].id")
-        device_name=$(echo $response | jq -r ".devices[0].name")
-
-        curl -s --location --request PUT 'https://api.spotify.com/v1/me/player' \
-        --header 'Content-Type: application/json' \
-        --header "Authorization: Bearer $access_token" \
-        --data "{
-            \"device_ids\": [
-                \"$device_id\"
-            ]
-        }" | event_handler $LINENO
-        event_handler INFO $LINENO "[devices] Activated first device \"$device_name\"; ID:$device_id)"
-        echo 0; return
-    fi
-    echo 1
+    echo $response
 }
 
 # Shows the available devices as list. The default device is marked blue
@@ -325,6 +340,29 @@ listDevices() {
     fi
 }
 
+# Pause playback on the user's accounts
+pausePlayback() {
+    local access_token=$(get_access_token) 
+    curl -s --location --request PUT 'https://api.spotify.com/v1/me/player/pause' \
+    --header "Authorization: Bearer $access_token" | event_handler $LINENO
+    event_handler INFO $LINENO "[devices] Pause playback"
+}
+
+# Get information about the user's current playback state
+# @return 1 if no devices is playing otherwise 0
+getPlaybackState() {
+    local access_token=$(get_access_token) 
+    local response=$(curl -s --request GET \
+        --url "https://api.spotify.com/v1/me/player" \
+        --header "Authorization: Bearer $access_token")
+    local play_state=$(echo $response | jq '.is_playing')
+    if [ "$play_state" == "true" ]; then
+        echo 0; return
+    fi
+    echo 1
+}
+
+
 # Get spotify catalog information
 # @param type The item type to search: album, artist, playlist, track, 
 #             show, episode, audiobook
@@ -344,9 +382,9 @@ search() {
 resumePlayback() {
     local access_token=$(get_access_token) 
     local endpoint="https://api.spotify.com/v1/me/player/play"
+    event_handler INFO $LINENO "[play] $endpoint; Resume playing on active device"
     curl -s --location --request PUT $endpoint \
         --header "Authorization: Bearer $access_token" | event_handler $LINENO
-    event_handler INFO $LINENO "[play] $endpoint; Resume playing on active device"
 }
 
 
