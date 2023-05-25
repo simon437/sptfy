@@ -5,27 +5,45 @@
 # Initialize devices
 # @return Status 0 if a device was activated otherwise 1
 initializeDevice() {
-    local active_devices=$(getActiveDevices);
+    local active_devices=$(getActiveDevice);
     if [ "$active_devices" == 1 ]; then # no active device found
         
         # start and activate spotifyd depending on the config
         initializeSpotifyd
+        
 
-        # activate the default device or first available
         local default_device=$(grep '^Device ' "$config" | cut -d' ' -f2)
-        if [ -n "$default_device" ] && [ "$default_device" != "Device" ]; then
+        if [ -n "$default_device" ]; then # activate the default device
             local status=$(activateDevice $default_device)
-            if [ $status == 1 ]; then # failed to activate default device
-                local available_devices=$(getAvailableDevices)
-                first_available_device=$(echo $available_devices | jq -r ".devices[0].id")
+        else # activate first device
+            local available_devices=$(getAvailableDevices)
+            if [ "$available_devices" != 1 ]; then
+                local first_available_device=$(echo $available_devices | jq -r ".devices[0].id")
                 status=$(activateDevice $first_available_device)
+                
                 if [ $status == 1 ]; then # failed to activate first available device
                     echo 1; return
                 fi
             fi
+            # no devices available
         fi
+
     fi
     echo 0; return
+}
+
+# Check if spotifyd should be startet. Can be set in the configuration file
+initializeSpotifyd() {
+    local spotifyd=$(grep '^spotifyd' "$config" | cut -d' ' -f2)
+    if [ "$spotifyd" == "true" ]; then
+        if [ ! $(pgrep "spotifyd") ]; then
+            spotifyd &
+            sleep 5 # the system needs a short time to start the process
+                    # Better solution would be to active wait for the process!
+        elif [ ! $(pgrep "spotifyd") ]; then
+            event_handler WARNING $LINENO "[devices] Failed to start spotifyd"
+        fi
+    fi
 }
 
 # Activates a device
@@ -49,28 +67,17 @@ activateDevice() {
     }" | event_handler $LINENO
     event_handler INFO $LINENO "[devices] Activated device; ID:$device_id)"
 
+    sleep 5 # the web-api needs a short time to activate a device. A bettwer
+            # solution would be to active wait here until the device is active.
     echo 0
-}
-
-# Check if spotifyd should be startet. Can be set in the configuration file
-initializeSpotifyd() {
-    local spotifyd=$(grep '^spotifyd' "$config" | cut -d' ' -f2)
-    if [ "$spotifyd" == "true" ]; then
-        if [ ! $(pgrep "spotifyd") ]; then
-            spotifyd &
-        fi
-    fi
-    if [ ! $(pgrep "spotifyd") ]; then
-        event_handler WARNING $LINENO "[devices] Failed to start spotifyd"
-    fi
 }
 
 # Get the active devices
 # @return JSON-Formattet active devices or 1 when no devices are active
-getActiveDevices() {
+getActiveDevice() {
     local available_devices=$(getAvailableDevices)
     if [ "$available_devices" == 1 ]; then
-            event_handler WARNING $LINENO "[devices] No Active device found"
+            event_handler INFO $LINENO "[devices] No Active device found"
             echo 1; return
     else
         local active_devices='{ "devices" : [ ] }'
@@ -83,13 +90,12 @@ getActiveDevices() {
             local is_active=$(echo $device | jq -r ".is_active")
             if [ "$is_active" == "true" ]; then
                 active_devices=$(echo $active_devices | jq ".devices + [$device]")
+                echo $active_devices 
+                return;
             fi
         done
-        if [ "$active_devices" == '{ "devices" : [ ] }' ]; then
-            echo 1; return
-        fi
-        echo $active_devices 
     fi
+    echo 1; return
 }
 
 # Get information about a user's available devices
@@ -102,7 +108,8 @@ getAvailableDevices() {
     local devices=$(echo $response | jq '.devices | length')
     event_handler INFO $LINENO "[devices] Available devices: $devices"
     if [ "$devices" == "0" ]; then
-        event_handler ERROR $LINENO "No active devices" $EXIT_GENERAL_ERROR
+        event_handler INFO $LINENO "[devices] No available devices"
+        echo 1; return
     fi
     echo $response
 }

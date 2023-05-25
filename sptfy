@@ -4,13 +4,14 @@
 # lisence: AGPLv3
 # change-log: 30.04.2023 Simon Olfs: Version 0.1 created
 
-source ./controler/var.sh           # Import variables controler
-source ./controler/help.sh          # Import help controler
-source ./controler/logging.sh       # Import logging controler
-source ./controler/authorization.sh # Import o-auth 2.0 controler
-source ./controler/devices.sh       # Import device controler
-source ./webAPI/player.sh           # Import web-api player functions
-source ./webAPI/search.sh           # Import web-api search functions
+root="/home/simon/prog/sptfy"           # root for of the programm
+source $root/controler/var.sh           # Import variables controler
+source $root/controler/help.sh          # Import help controler
+source $root/controler/logging.sh       # Import logging controler
+source $root/controler/authorization.sh # Import o-auth 2.0 controler
+source $root/controler/devices.sh       # Import device controler
+source $root/webAPI/player.sh           # Import web-api player functions
+source $root/webAPI/search.sh           # Import web-api search functions
 
 # checks and handles the passed arguments
 validate_arguments() {
@@ -18,7 +19,7 @@ validate_arguments() {
         event_handler USAGE $LINENO "Invalid arguments: $@"
     fi
 
-    argument=$1                     # argument to handle
+    argument=$1                         # argument to handle
     #if [ $argument == "init" ]; then
         #init 
         #exit $EXIT_OK
@@ -100,16 +101,13 @@ main() {
         exit $EXIT_OK
     fi
 
+    # no options or arguments are passed
     status=$(getPlaybackState)
     if [ $status == 0 ]; then
         pausePlayback
     else
         resumePlayback
     fi
-
-    #echo $(initializeDevice)
-    #echo "Available Devices: $(getAvailableDevices)"
-    #echo "Active Devices: $(echo $(getActiveDevices) | jq .)"
 }
 
 main "$@"
