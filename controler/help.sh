@@ -18,7 +18,9 @@ Options:
 Examples:
     $PROGNAME                        Resume play on active device
     $PROGNAME -d                     List all active devices
-    $PROGNAME -d select              List all active devices an select a default device
+    $PROGNAME -d select              List all active devices an select a default device.
+                                     Selecting a default device can used to transfer the
+                                     playback to the selected device as well.
     $PROGNAME -p "Discover Weekly"   Play the discover weekly playlist on default device
 EOF
 }

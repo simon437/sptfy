@@ -36,11 +36,11 @@ initializeDevice() {
 initializeSpotifyd() {
     local spotifyd=$(grep '^spotifyd' "$config" | cut -d' ' -f2)
     if [ "$spotifyd" == "true" ]; then
-        if [ ! $(pgrep "spotifyd") ]; then
+        if [ -z "$(pgrep spotifyd)" ]; then
             spotifyd &
             sleep 5 # the system needs a short time to start the process
                     # Better solution would be to active wait for the process!
-        elif [ ! $(pgrep "spotifyd") ]; then
+        elif [ -z "$(pgrep spotifyd)" ]; then
             event_handler WARNING $LINENO "[devices] Failed to start spotifyd"
         fi
     fi
@@ -158,6 +158,7 @@ listDevices() {
         read -p "Select a new default device: " id
         id=$(echo $response | jq -r ".devices[$(($id-1))].id")
         sed -E -i "s/^Device.*/Device $id/" $config
+        local status=$(activateDevice $default_device)
         return
     fi
 }
