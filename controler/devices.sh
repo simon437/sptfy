@@ -162,3 +162,30 @@ listDevices() {
         return
     fi
 }
+
+# Display the current track to the desktop
+displayCurrentTrack() {
+    local response=$(getCurrentlyPlayingTrack)
+    local id=$(echo $response | jq -r '.item.id')
+    local name=$(echo $response | jq -r '.item.name')
+    local image=$(echo $response | jq -r '.item.album.images[2].url')
+    local length=$(echo $response | jq '.item.artists | length')
+    local tmp=$(mktemp)
+    local artists=""
+
+    for (( i=0; i < $length ; i++ ))
+    do
+    local artist=$(echo $response | jq -r ".item.artists[$i].name")
+    if [ $length -gt 1 ] && [ $i -lt $(($length - 1)) ]; then
+        artists="$artists$artist\n"
+    else
+        artists="$artists$artist"
+    fi
+    done
+
+    wget --quiet -O $tmp $image
+    notify-send --urgency=low -i $tmp --app-name "$PROGNAME" \
+    "$PROGNAME is now playing..." \
+    "\n$(printf "%-9s%-10s\n%-10s%-10s" "Song:" "$name" "Artist:" "$artists")\n"
+    rm -rf $tmp
+}

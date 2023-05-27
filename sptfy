@@ -86,12 +86,14 @@ main() {
     if [ $opt_p -eq 1 ]; then 
         startPlayback $(search playlist "$opt_p_val") || 
             exit $EXIT_GENERAL_ERROR
+        displayCurrentTrack
         exit $EXIT_OK
     fi
 
     # -n next
     if [ $opt_n -eq 1 ]; then
         skipToNext || exit $EXIT_GENERAL_ERROR
+        displayCurrentTrack
         exit $EXIT_OK
     fi
 
@@ -107,6 +109,7 @@ main() {
         pausePlayback
     else
         resumePlayback
+        displayCurrentTrack
     fi
 }
 
