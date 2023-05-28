@@ -11,9 +11,10 @@ Controle spotify devices
 Options:
    -h                            Print this help
    -v                            Print version number
-   -d [select]                   List available devices. Default device is colored
+   -d [select]                   List available devices or select a device for playback
    -p <name>                     Start a playlist by name. Default is Release Radar
    -n                            Skip to next track in the queue
+   -i [song]                     Show information. Default show's title and artist
 
 Examples:
     $PROGNAME                        Resume play on active device

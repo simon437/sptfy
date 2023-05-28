@@ -163,29 +163,83 @@ listDevices() {
     fi
 }
 
-# Display the current track to the desktop
-displayCurrentTrack() {
-    local response=$(getCurrentlyPlayingTrack)
-    local id=$(echo $response | jq -r '.item.id')
-    local name=$(echo $response | jq -r '.item.name')
-    local image=$(echo $response | jq -r '.item.album.images[2].url')
-    local length=$(echo $response | jq '.item.artists | length')
-    local tmp=$(mktemp)
-    local artists=""
-
-    for (( i=0; i < $length ; i++ ))
-    do
-    local artist=$(echo $response | jq -r ".item.artists[$i].name")
-    if [ $length -gt 1 ] && [ $i -lt $(($length - 1)) ]; then
-        artists="$artists$artist\n"
-    else
-        artists="$artists$artist"
+# Display the current track as notification
+displayCurrentPlay() {
+    if [ $# != 1 ]; then
+        event_handler ERROR $LINENO "No summary provided" $EXIT_INTERNAL_ERROR
     fi
+    local output=""
+    local response=$(getCurrentlyPlayingObject)
+    local id=$(echo $response | jq -r '.item.id')
+    local track=$(echo $response | jq -r '.item.name')
+    local track_url=$(echo $response | jq -r '.item.external_urls.spotify')
+    output+=`printf "%-10s<a href=\"%s\">%s</a>" "Track:" "$track_url" "$track"`
+
+    local artists=""
+    local length=$(echo $response | jq '.item.artists | length')
+    for (( i=0; i < $length ; i++ )); do
+        local artist=$(echo $response | jq -r ".item.artists[$i].name")
+        local artist_url=$(echo $response | jq -r ".item.artists[$i].external_urls.spotify")
+        output+=`printf "\n%-10s<a href=\"%s\">%s</a>" "Artist:" "$artist_url" "$artist"`
     done
 
-    wget --quiet -O $tmp $image
-    notify-send --urgency=low -i $tmp --app-name "$PROGNAME" \
-    "$PROGNAME is now playing..." \
-    "\n$(printf "%-9s%-10s\n%-10s%-10s" "Song:" "$name" "Artist:" "$artists")\n"
-    rm -rf $tmp
+    local notification_conf=$(grep '^displayInformation' "$config")
+    if [ -n "$notification_conf" ]; then
+        local image=$(echo $response | jq -r '.item.album.images[2].url')
+        local tmp=$(mktemp)
+        wget --quiet -O $tmp $image
+        notify-send --urgency=low -i $tmp --app-name "$PROGNAME" \
+        "$1" \
+        "$output"
+        rm -rf $tmp
+    else
+        echo -e "$output"
+    fi
+}
+
+# Display information about a track
+displayInfoTrack() {
+    if [ $# != 1 ]; then
+        local response=$(getCurrentlyPlayingObject)
+        local id=$(echo $response | jq -r '.item.id')
+    else
+        local id=$1
+    fi
+        
+    local response=$(getPlayingObject $id)
+    local name=$(echo $response | jq -r '.name')
+    local popularity=$(echo $response | jq -r '.popularity')
+    local image=$(echo $response | jq -r '.album.images[2].url')
+    local href=$(echo $response | jq -r '.external_urls.spotify')
+
+    local response=$(getTrackAudioFeatures $id)
+    local danceability=$(echo $response | jq -r '.danceability')
+    local energy=$(echo $response | jq -r '.energy')
+    local speechiness=$(echo $response | jq -r '.speechiness')
+    local instrumentalness=$(echo $response | jq -r '.instrumentalness')
+    local liveness=$(echo $response | jq -r '.liveness')
+    local valence=$(echo $response | jq -r '.valence')
+    local tempo=$(echo $response | jq -r '.tempo')
+
+    local output=""
+    output+=`printf "%-20s<a href=\"%-30s\">%s</a>" "Song:" "$href" "$name"`
+    output+=`printf "\n%-20s%-30s\n" "Popularity:" "$popularity"`
+    output+=`printf "\n%-20s%-30s" "danceability:" "$danceability"`
+    output+=`printf "\n%-20s%-30s" "enery:" "$energy"`
+    output+=`printf "\n%-20s%-30s" "speechiness:" "$speechiness"`
+    output+=`printf "\n%-20s%-30s" "instrumentalness:" "$instrumentalness"`
+    output+=`printf "\n%-20s%-30s" "liveness:" "$liveness"`
+    output+=`printf "\n%-20s%-30s" "valence:" "$valence"`
+    output+=`printf "\n%-20s%-30s" "tempo:" "$tempo"`
+
+    local notification_conf=$(grep '^displayInformation' "$config")
+    if [ -n "$notification_conf" ]; then
+        local tmp=$(mktemp)
+        wget --quiet -O $tmp $image
+        notify-send --urgency=low -i $tmp --app-name "$PROGNAME" "Track details:" \
+            "$output"
+        rm -rf $tmp
+    else
+        echo -e "$output"
+    fi
 }

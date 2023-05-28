@@ -64,10 +64,40 @@ skipToNext() {
 }
 
 # Get the object currently being played
-getCurrentlyPlayingTrack() {
+getCurrentlyPlayingObject() {
     access_token=$(get_access_token) 
     endpoint="https://api.spotify.com/v1/me/player/currently-playing"
     event_handler INFO $LINENO "[player] Get currently playing track"
+    local response=$(curl -s --request GET \
+        --url "$endpoint" \
+        --header "Authorization: Bearer $access_token")
+    echo $response
+}
+
+# Get information for a single track
+getPlayingObject() {
+    if [ $# != 1 ]; then
+        event_handler ERROR $LINENO "[player] No id passed" $EXIT_INTERNAL_ERROR
+    fi
+
+    access_token=$(get_access_token) 
+    endpoint="https://api.spotify.com/v1/tracks/$1"
+    event_handler INFO $LINENO "[player] Get track by id ($1)"
+    local response=$(curl -s --request GET \
+        --url "$endpoint" \
+        --header "Authorization: Bearer $access_token")
+    echo $response
+}
+
+# Get audio feature information by ID
+getTrackAudioFeatures() {
+    if [ $# != 1 ]; then
+        event_handler ERROR $LINENO "[player] No id passed" $EXIT_INTERNAL_ERROR
+    fi
+
+    access_token=$(get_access_token) 
+    endpoint="https://api.spotify.com/v1/audio-features/$1"
+    event_handler INFO $LINENO "[player] Get track features by id ($1)"
     local response=$(curl -s --request GET \
         --url "$endpoint" \
         --header "Authorization: Bearer $access_token")

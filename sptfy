@@ -31,7 +31,7 @@ validate_arguments() {
 # validates the passed options
 validate_options_or_exit() {
     local opt opt_count=0
-    while getopts :hvd:p:n opt
+    while getopts :hvd:p:ni: opt
     do
         (( opt_count++ ))
         case $opt in
@@ -40,9 +40,11 @@ validate_options_or_exit() {
             n) opt_n=1; (( opt_count-- )) ;;
             d) opt_d=1; opt_d_val=$OPTARG ;;
             p) opt_p=1; opt_p_val=$OPTARG ;;
+            i) opt_i=1; opt_i_val=$OPTARG ;;
             :) case $OPTARG in 
                     d) opt_d=1; continue ;;
                     p) opt_p=1; continue ;;
+                    i) opt_i=1; continue ;;
                     *) event_handler USAGE $LINENO \ 
                         "Missing argument for option '-$OPTARG'" ;;
                 esac ;;
@@ -86,14 +88,31 @@ main() {
     if [ $opt_p -eq 1 ]; then 
         startPlayback $(search playlist "$opt_p_val") || 
             exit $EXIT_GENERAL_ERROR
-        displayCurrentTrack
+        displayCurrentPlay "Play: $opt_p_val"
         exit $EXIT_OK
     fi
 
     # -n next
     if [ $opt_n -eq 1 ]; then
         skipToNext || exit $EXIT_GENERAL_ERROR
-        displayCurrentTrack
+        displayCurrentPlay "Next track"
+        exit $EXIT_OK
+    fi
+
+    # -i information
+    if [ $opt_i -eq 1 ]; then
+        if [ -n "$opt_i_val" ] && [ "$opt_i_val" != "play" ] && [ "$opt_i_val" != "song" ]; then 
+            event_handler USAGE $LINENO "Invalid option -i $opt_i_val"
+        fi
+        
+        if [ "$opt_i_val" == "play" ]; then
+            displayCurrentPlay "Current song"
+        fi
+
+        if [ "$opt_i_val" == "song" ]; then
+            displayInfoTrack
+        fi
+
         exit $EXIT_OK
     fi
 
@@ -109,7 +128,7 @@ main() {
         pausePlayback
     else
         resumePlayback
-        displayCurrentTrack
+        displayCurrentPlay "Resume to"
     fi
 }
 
