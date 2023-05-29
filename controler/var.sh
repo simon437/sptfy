@@ -12,6 +12,8 @@ opt_p_val='Release Radar'           # (default) value for -p argument
 opt_n=0                             # -n next
 opt_i=0                             # -i information
 opt_i_val='play'                    # (default) value for -i argument
+opt_r=0                             # -r recommendations
+opt_r_val='song'                    # (default) value for -r argument
 
 # Some global variables
 set -o nounset                      # bash: abort on undefined variables

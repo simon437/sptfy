@@ -11,10 +11,21 @@ Controle spotify devices
 Options:
    -h                            Print this help
    -v                            Print version number
-   -d [select]                   List available devices or select a device for playback
-   -p <name>                     Start a playlist by name. Default is Release Radar
+   -d,                           List available devices
+       [select]                  Select a device for playback
+
+   -p, ["Release Radar"],        Start playing the default playlist (default="Release Radar")
+       [<name>]                  Play a specified playlist by name. This is a search 
+                                 function. So not only the own playlists can be started
+
    -n                            Skip to next track in the queue
-   -i [song]                     Show information. Default show's title and artist
+   -i, [play],                   Show information about the current play (default=play)
+       [song]                    Show detail information about the current song
+
+   -r,                           Get track recommendations
+       [song],                   Recommendations based on the current playing track
+       [artist],                 [TODO] Recommendations based on the current playing artist
+       [playlist]                [TODO] Recommendations based on the current playing playlist
 
 Examples:
     $PROGNAME                        Resume play on active device

@@ -12,6 +12,7 @@ source $root/controler/authorization.sh # Import o-auth 2.0 controler
 source $root/controler/devices.sh       # Import device controler
 source $root/webAPI/player.sh           # Import web-api player functions
 source $root/webAPI/search.sh           # Import web-api search functions
+source $root/webAPI/tracks.sh
 
 # checks and handles the passed arguments
 validate_arguments() {
@@ -31,7 +32,7 @@ validate_arguments() {
 # validates the passed options
 validate_options_or_exit() {
     local opt opt_count=0
-    while getopts :hvd:p:ni: opt
+    while getopts :hvd:p:ni:r: opt
     do
         (( opt_count++ ))
         case $opt in
@@ -41,10 +42,12 @@ validate_options_or_exit() {
             d) opt_d=1; opt_d_val=$OPTARG ;;
             p) opt_p=1; opt_p_val=$OPTARG ;;
             i) opt_i=1; opt_i_val=$OPTARG ;;
+            r) opt_r=1; opt_r_val=$OPTARG ;;
             :) case $OPTARG in 
                     d) opt_d=1; continue ;;
                     p) opt_p=1; continue ;;
                     i) opt_i=1; continue ;;
+                    r) opt_r=1; continue ;;
                     *) event_handler USAGE $LINENO \ 
                         "Missing argument for option '-$OPTARG'" ;;
                 esac ;;
@@ -112,6 +115,20 @@ main() {
         if [ "$opt_i_val" == "song" ]; then
             displayInfoTrack
         fi
+
+        exit $EXIT_OK
+    fi
+
+    # -r recommendations
+    if [ $opt_r -eq 1 ]; then
+        echo "option -r $opt_r_val"
+        local recommendations=$(getRecommendationsByCurrentTrack)
+        local length=$(echo $recommendations | jq '.tracks | length')
+        echo "Recommended tracks: $length"
+
+        # Create playlist / clean playlist
+        # Add recommendations to playlist
+        # start playing
 
         exit $EXIT_OK
     fi

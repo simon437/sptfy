@@ -197,6 +197,30 @@ displayCurrentPlay() {
     fi
 }
 
+# Get the track features of the current track
+getTrackFeatures() {
+    local response=$(getCurrentlyPlayingObject)
+    local id=$(echo $response | jq -r '.item.id')
+
+    local response=$(getPlayingObject $id)
+    local name=$(echo $response | jq -r '.name')
+    local popularity=$(echo $response | jq -r '.popularity')
+    local image=$(echo $response | jq -r '.album.images[2].url')
+    local href=$(echo $response | jq -r '.external_urls.spotify')
+
+    local response=$(getTrackAudioFeatures $id)
+    local danceability=$(echo $response | jq -r '.danceability')
+    local energy=$(echo $response | jq -r '.energy')
+    local speechiness=$(echo $response | jq -r '.speechiness')
+    local instrumentalness=$(echo $response | jq -r '.instrumentalness')
+    local liveness=$(echo $response | jq -r '.liveness')
+    local valence=$(echo $response | jq -r '.valence')
+    local tempo=$(echo $response | jq -r '.tempo')
+
+    local endpoint="https://api.spotify.com/v1/recommendations"
+    
+}
+
 # Display information about a track
 displayInfoTrack() {
     if [ $# != 1 ]; then
