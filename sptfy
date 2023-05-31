@@ -121,10 +121,14 @@ main() {
 
     # -r recommendations
     if [ $opt_r -eq 1 ]; then
-        echo "option -r $opt_r_val"
         local recommendations=$(getRecommendationsByCurrentTrack)
         local length=$(echo $recommendations | jq '.tracks | length')
-        echo "Recommended tracks: $length"
+        local randomTrack=$(echo $((1 + $RANDOM % $length)))
+        local uri=$(echo $recommendations | jq -r ".tracks[$randomTrack].album.uri")
+        local track_number=$(echo $recommendations | jq ".tracks[$randomTrack].track_number")
+
+        startPlayback $uri $(($track_number-1))
+        displayCurrentPlay "Recommendation by song"
 
         # Create playlist / clean playlist
         # Add recommendations to playlist

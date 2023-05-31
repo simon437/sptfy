@@ -36,20 +36,33 @@ resumePlayback() {
 # Start a new context on the active device
 # @param uri The spotify URI
 startPlayback() {
-    if [ $# != 1 ]; then
+    if [ $# != 1 ] && [ $# != 2 ]; then
         event_handler ERROR $LINENO "No uri passed" $EXIT_INTERNAL_ERROR
     fi
 
     access_token=$(get_access_token) 
     endpoint="https://api.spotify.com/v1/me/player/play"
     url="$endpoint?&access_token=$access_token"
-    event_handler INFO $LINENO "[play] $endpoint; URI: $1"
-    curl -s --location --request PUT $url \
-    --header 'Content-Type: application/json' \
-    --data "{
-        \"context_uri\": \"$1\",
-        \"position_ms\": 0
-    }" | event_handler $LINENO
+    if [ $# == 1 ]; then
+        event_handler INFO $LINENO "[play] $endpoint; URI: $1"
+        curl -s --location --request PUT $url \
+        --header 'Content-Type: application/json' \
+        --data "{
+            \"context_uri\": \"$1\",
+            \"position_ms\": 0
+        }" | event_handler $LINENO
+    else
+        event_handler INFO $LINENO "[play] $endpoint; URI: $1"
+        curl -s --location --request PUT $endpoint \
+        --header 'Content-Type: application/json' \
+        --header "Authorization: Bearer $access_token" \
+        --data "{
+            \"context_uri\": \"$1\",
+            \"offset\": {
+                \"position\": $2
+            }
+        }" | event_handler $LINENO
+    fi
 }
 
 # Skips to next track in the user's queue
