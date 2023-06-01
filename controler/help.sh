@@ -11,6 +11,7 @@ Controle spotify devices
 Options:
    -h                            Print this help
    -v                            Print version number
+
    -d,                           List available devices
        [select]                  Select a device for playback
 
@@ -18,14 +19,24 @@ Options:
        [<name>]                  Play a specified playlist by name. This is a search 
                                  function. So not only the own playlists can be started
 
-   -n                            Skip to next track in the queue
    -i, [play],                   Show information about the current play (default=play)
        [song]                    Show detail information about the current song
 
-   -r,                           Get track recommendations
+   -r,                           Get recommendations (default=song)
        [song],                   Recommendations based on the current playing track
        [artist],                 [TODO] Recommendations based on the current playing artist
        [playlist]                [TODO] Recommendations based on the current playing playlist
+   
+   -n                            Skip to next track in the queue
+   -f                            Save current track to favorites
+
+Arguments:
+   next                          Skip to next track
+   prev                          Skip to previous track
+   pause                         Pause playback
+   resume                        Resume playback
+   up                            Volume up
+   down                          Volume down
 
 Examples:
     $PROGNAME                        Resume play on active device

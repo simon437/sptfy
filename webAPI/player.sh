@@ -70,10 +70,56 @@ skipToNext() {
     access_token=$(get_access_token) 
     local endpoint="https://api.spotify.com/v1/me/player/next"
     event_handler INFO $LINENO "[player] Skip to next"
-    local response=$(curl -s --request POST \
+    curl -s --request POST \
         --url $endpoint \
         --header "Authorization: Bearer $access_token" | 
-        event_handler $LINENO)
+        event_handler $LINENO
+} 
+
+# Skips to previous track in user's queue
+skipToPrev() {
+    access_token=$(get_access_token) 
+    local endpoint="https://api.spotify.com/v1/me/player/previous"
+    event_handler INFO $LINENO "[player] Skip to previous"
+    curl -s --request POST \
+        --url $endpoint \
+        --header "Authorization: Bearer $access_token" | 
+        event_handler $LINENO
+}
+
+# Set the volume for the current playback device
+setPlaybackVolume() {
+    local active_device=$(getActiveDevice)
+    local current_volume=$(echo $active_device | jq -r '.[].volume_percent')
+    local new_volume=$(changeVol $1 $current_volume)
+    local access_token=$(get_access_token) 
+    local endpoint="https://api.spotify.com/v1/me/player/volume"
+    local url="$endpoint?volume_percent=$new_volume"
+    event_handler INFO $LINENO "[player] Set volume to $new_volume"
+    curl -s --request PUT \
+        --url $url \
+        --header "Authorization: Bearer $access_token" | 
+        event_handler $LINENO
+}
+
+# change volume
+# @param $1 + For increase the volume
+# @param $1 - For decreasing the volume
+# @return volume
+changeVol() {
+    local step=10
+    local volume=0
+    if [ "$1" == "up" ]; then
+        volume=$(($2+$step))
+    elif [ "$1" == "down" ]; then
+        volume=$(($2-$step))
+    fi
+    if [ $volume -gt 100 ]; then
+        volume=100
+    elif [ $volume -lt 0 ]; then
+        volume=0
+    fi
+    echo $volume
 }
 
 # Get the object currently being played
@@ -86,6 +132,7 @@ getCurrentlyPlayingObject() {
         --header "Authorization: Bearer $access_token")
     echo $response
 }
+
 
 # Get information for a single track
 getPlayingObject() {
@@ -115,4 +162,18 @@ getTrackAudioFeatures() {
         --url "$endpoint" \
         --header "Authorization: Bearer $access_token")
     echo $response
+}
+
+# Add track to queue
+addToQueue() {
+    if [ $# != 1 ]; then
+        event_handler ERROR $LINENO "[player] No id passed" $EXIT_INTERNAL_ERROR
+    fi
+    access_token=$(get_access_token) 
+    endpoint="https://api.spotify.com/v1/me/player/queue"
+    url="$endpoint?uri=$1"
+    event_handler INFO $LINENO "[player] Put track to queue($1)"
+    local response=$(curl -s --request POST \
+        --url "$url" \
+        --header "Authorization: Bearer $access_token")
 }

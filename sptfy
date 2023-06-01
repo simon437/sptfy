@@ -21,10 +21,37 @@ validate_arguments() {
     fi
 
     argument=$1                         # argument to handle
-    #if [ $argument == "init" ]; then
-        #init 
-        #exit $EXIT_OK
-    #fi
+    if [ $argument == "next" ]; then
+        skipToNext || exit $EXIT_GENERAL_ERROR
+        displayCurrentPlay "Next track"
+        exit $EXIT_OK
+    fi
+
+    if [ $argument == "prev" ]; then
+        skipToPrev || exit $EXIT_GENERAL_ERROR
+        displayCurrentPlay "Previous track"
+        exit $EXIT_OK
+    fi
+
+    if [ $argument == "pause" ]; then
+        pausePlayback || exit $EXIT_GENERAL_ERROR
+        exit $EXIT_OK
+    fi
+
+    if [ $argument == "resume" ]; then
+        resumePlayback || exit $EXIT_GENERAL_ERROR
+        exit $EXIT_OK
+    fi
+    
+    if [ $argument == "up" ]; then
+        setPlaybackVolume "up"
+        exit $EXIT_OK
+    fi
+
+    if [ $argument == "down" ]; then
+        setPlaybackVolume "down"
+        exit $EXIT_OK
+    fi
 
     event_handler USAGE $LINENO "Invalid argument: $argument"
 }
@@ -32,13 +59,14 @@ validate_arguments() {
 # validates the passed options
 validate_options_or_exit() {
     local opt opt_count=0
-    while getopts :hvd:p:ni:r: opt
+    while getopts :hvd:p:ni:r:f opt
     do
         (( opt_count++ ))
         case $opt in
             h) opt_h=1; (( opt_count-- )) ;;
             v) opt_v=1; (( opt_count-- )) ;;
             n) opt_n=1; (( opt_count-- )) ;;
+            f) opt_f=1; (( opt_count-- )) ;;
             d) opt_d=1; opt_d_val=$OPTARG ;;
             p) opt_p=1; opt_p_val=$OPTARG ;;
             i) opt_i=1; opt_i_val=$OPTARG ;;
@@ -101,6 +129,14 @@ main() {
         displayCurrentPlay "Next track"
         exit $EXIT_OK
     fi
+    
+    # -f favorites
+    if [ $opt_f -eq 1 ]; then
+        local response=$(getCurrentlyPlayingObject)
+        local id=$(echo $response | jq -r '.item.id')
+        saveTrackToFavorites $id
+        exit $EXIT_OK
+    fi
 
     # -i information
     if [ $opt_i -eq 1 ]; then
@@ -124,16 +160,8 @@ main() {
         local recommendations=$(getRecommendationsByCurrentTrack)
         local length=$(echo $recommendations | jq '.tracks | length')
         local randomTrack=$(echo $((1 + $RANDOM % $length)))
-        local uri=$(echo $recommendations | jq -r ".tracks[$randomTrack].album.uri")
-        local track_number=$(echo $recommendations | jq ".tracks[$randomTrack].track_number")
-
-        startPlayback $uri $(($track_number-1))
-        displayCurrentPlay "Recommendation by song"
-
-        # Create playlist / clean playlist
-        # Add recommendations to playlist
-        # start playing
-
+        local track_uri=$(echo $recommendations | jq -r ".tracks[$randomTrack].uri")
+        addToQueue $track_uri
         exit $EXIT_OK
     fi
 

@@ -10,6 +10,7 @@ opt_d_val=''                        # (default) value for -d argument
 opt_p=0                             # -p playlist
 opt_p_val='Release Radar'           # (default) value for -p argument
 opt_n=0                             # -n next
+opt_f=0                             # -f favorites
 opt_i=0                             # -i information
 opt_i_val='play'                    # (default) value for -i argument
 opt_r=0                             # -r recommendations

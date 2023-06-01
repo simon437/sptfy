@@ -72,3 +72,18 @@ getRecommendationsByCurrentTrack() {
         --header "Authorization: Bearer $access_token")
     echo $response
 }
+
+# Save track to favorites
+saveTrackToFavorites() {
+    if [ $# != 1 ]; then
+        event_handler ERROR $LINENO "[player] No id passed" $EXIT_INTERNAL_ERROR
+    fi
+
+    access_token=$(get_access_token) 
+    endpoint="https://api.spotify.com/v1/me/tracks"
+    url="$endpoint?ids=$1"
+    event_handler INFO $LINENO "[player] Add to favorites ($1)"
+    local response=$(curl -s --request PUT \
+        --url "$url" \
+        --header "Authorization: Bearer $access_token")
+}
