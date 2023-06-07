@@ -58,15 +58,12 @@ validate_arguments() {
 
 # validates the passed options
 validate_options_or_exit() {
-    local opt opt_count=0
-    while getopts :hvd:p:ni:r:f opt
+    while getopts :hvd:p:i:r:f opt
     do
-        (( opt_count++ ))
         case $opt in
-            h) opt_h=1; (( opt_count-- )) ;;
-            v) opt_v=1; (( opt_count-- )) ;;
-            n) opt_n=1; (( opt_count-- )) ;;
-            f) opt_f=1; (( opt_count-- )) ;;
+            h) opt_h=1 ;;
+            v) opt_v=1 ;;
+            f) opt_f=1 ;;
             d) opt_d=1; opt_d_val=$OPTARG ;;
             p) opt_p=1; opt_p_val=$OPTARG ;;
             i) opt_i=1; opt_i_val=$OPTARG ;;
@@ -122,13 +119,6 @@ main() {
         displayCurrentPlay "Play: $opt_p_val"
         exit $EXIT_OK
     fi
-
-    # -n next
-    if [ $opt_n -eq 1 ]; then
-        skipToNext || exit $EXIT_GENERAL_ERROR
-        displayCurrentPlay "Next track"
-        exit $EXIT_OK
-    fi
     
     # -f favorites
     if [ $opt_f -eq 1 ]; then
@@ -157,11 +147,83 @@ main() {
 
     # -r recommendations
     if [ $opt_r -eq 1 ]; then
+        if [ $# -gt 0 ]; then
+            if [ $# -eq 1 ]; then # display features to user to configure
+                displayCurrentPlay "Current song"
+
+                local track=$(getTrackFeatures)
+                local output=""
+                output+=`printf "%s" "Select a property by ID and provide the new value."`
+                output+=`printf "\n%-12s%-15s%-s" "Examples:" "1=10" "change popularity to 10"`
+                output+=`printf "\n%-12s%-15s%-s" ""        "3=10;8=130" "change energy to 10 and tempo to 130"`
+                output+=`printf "\n%-12s%-15s%-s" ""        "!" "exit config"`
+                output+=`printf "\n\n%-s%-30s" "Track:" "\t$(echo $track | jq -r '.track.name'), \n\t$(echo $track | jq -r '.track.artists')"`
+                echo -e "$output"
+
+                local response=""
+                while [[ $response != \! ]]; do 
+                    local output=""
+                    output+=`printf "\n\n%-5s%-20s%-15s%-20s" "ID" "PROPERTY" "VALUE" "RANGE"`
+                    output+=`printf "\n%-50s" "----------------------------------------------------------------------"`
+                    output+=`printf "\n%-5s%-20s%-15s%-20s" "1"  "popularity"   "$(echo $track | jq -r '.track.popularity')" "0-100"`
+                    output+=`printf "\n%-5s%-20s%-15s%-20s" "2"  "danceability" "$(echo $track | jq -r '.track.danceability')" "0-1"`
+                    output+=`printf "\n%-5s%-20s%-15s%-20s" "3"  "energy" "$(echo $track | jq -r '.track.energy')" "0-1"`
+                    output+=`printf "\n%-5s%-20s%-15s%-20s" "4"  "speechiness" "$(echo $track | jq -r '.track.speechiness')" "0-1"`
+                    output+=`printf "\n%-5s%-20s%-15s%-20s" "5"  "instrumentalness" "$(echo $track | jq -r '.track.instrumentalness')" "0-1"`
+                    output+=`printf "\n%-5s%-20s%-15s%-20s" "6"  "liveness" "$(echo $track | jq -r '.track.liveness')" "0-1"`
+                    output+=`printf "\n%-5s%-20s%-15s%-20s" "7"  "valence" "$(echo $track | jq -r '.track.valence')" "0-1"`
+                    output+=`printf "\n%-5s%-20s%-15s%-20s" "8"  "tempo" "$(echo $track | jq -r '.track.tempo')" "BPM"`
+                    output+=`printf "\n%-5s%-20s%-15s%-20s" "9"  "limit" "$(echo $track | jq -r '.track.limit')" "0-100"`
+                    echo -e "$output"
+                    read -p "[!|id=value]:" response
+
+
+                    local id=$(echo $response | sed -E 's/=.*//')
+                    local val=$(echo $response | sed -E 's/^.*=//')
+
+                    case $id in 
+                        1) track=$(echo $track | jq ".track.popularity = \"$val\"") ;;
+                        2) track=$(echo $track | jq ".track.danceability = \"$val\"") ;;
+                        3) track=$(echo $track | jq ".track.enery = \"$val\"") ;;
+                        4) track=$(echo $track | jq ".track.speechiness = \"$val\"") ;;
+                        5) track=$(echo $track | jq ".track.instrumentalness = \"$val\"") ;;
+                        6) track=$(echo $track | jq ".track.liveness = \"$val\"") ;;
+                        7) track=$(echo $track | jq ".track.valence = \"$val\"") ;;
+                        8) track=$(echo $track | jq ".track.tempo = \"$val\"") ;;
+                        9) track=$(echo $track | jq ".track.limit = \"$val\"") ;;
+                        *)
+                    esac
+
+                    if [ $response != \! ]; then
+                        echo -en "\033[1A\033[K\033[13A"
+                    fi
+                done
+
+                local recommendations=$(getRecommendationsByFeatures "$track")
+                for num in $(seq 0 $(echo $track | jq -r '.track.limit')); do
+                    local track_uri=$(echo $recommendations | jq -r ".tracks[$num].uri")
+                    addToQueue $track_uri
+                done
+
+                ## Feedback for user needs to be displayed. Possible: Config for recommendation + list of songs added to the queue
+                exit $EXIT_OK
+            fi
+        fi
+
+
         local recommendations=$(getRecommendationsByCurrentTrack)
         local length=$(echo $recommendations | jq '.tracks | length')
-        local randomTrack=$(echo $((1 + $RANDOM % $length)))
-        local track_uri=$(echo $recommendations | jq -r ".tracks[$randomTrack].uri")
-        addToQueue $track_uri
+        local number_of_recommendations=1
+        if [[ $# -gt 0 ]]; then
+            if [[ $@ =~ ^[1-9]?$|^1[0-9]$|20 ]]; then
+                number_of_recommendations=$@
+            fi
+        fi
+
+        for num in $(seq 0 $length | shuf | head -n $number_of_recommendations); do
+            local track_uri=$(echo $recommendations | jq -r ".tracks[$num].uri")
+            addToQueue $track_uri
+        done
         exit $EXIT_OK
     fi
 

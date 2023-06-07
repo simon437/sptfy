@@ -197,13 +197,36 @@ displayCurrentPlay() {
     fi
 }
 
+
+
 # Get the track features of the current track
+# param $1 The id of a specific track. If no parameter is passed the current
+#          track is taken
 getTrackFeatures() {
-    local response=$(getCurrentlyPlayingObject)
-    local id=$(echo $response | jq -r '.item.id')
+    if [ $# != 1 ]; then
+        local response=$(getCurrentlyPlayingObject)
+        local id=$(echo $response | jq -r '.item.id')
+    else
+        local id=$1
+    fi
 
     local response=$(getPlayingObject $id)
     local name=$(echo $response | jq -r '.name')
+    local artists=""
+    local artists_id=""
+    local length=$(echo $response | jq '.artists | length')
+    for (( i=0; i < $length ; i++ )); do
+        local artist_name=$(echo $response | jq -r ".artists[$i].name")
+        local artist_id=$(echo $response | jq -r ".artists[$i].id")
+        if [ $length -gt 1 -a $i -lt $(($length - 1)) ]; then
+            artists+="$artist_name,"
+            artists_id+="$artist_id,"
+        else
+            artists+="$artist_name"
+            artists_id+="$artist_id"
+        fi
+    done
+
     local popularity=$(echo $response | jq -r '.popularity')
     local image=$(echo $response | jq -r '.album.images[2].url')
     local href=$(echo $response | jq -r '.external_urls.spotify')
@@ -217,8 +240,22 @@ getTrackFeatures() {
     local valence=$(echo $response | jq -r '.valence')
     local tempo=$(echo $response | jq -r '.tempo')
 
-    local endpoint="https://api.spotify.com/v1/recommendations"
-    
+    local track="{ \"track\" : { 
+        \"id\": \"$id\", 
+        \"name\": \"$name\",
+        \"artists\": \"$artists\",
+        \"artists_id\": \"$artists_id\",
+        \"popularity\": \"$popularity\",
+        \"danceability\": \"$danceability\",
+        \"energy\": \"$energy\",
+        \"speechiness\": \"$speechiness\",
+        \"instrumentalness\": \"$instrumentalness\",
+        \"liveness\": \"$liveness\",
+        \"valence\": \"$valence\",
+        \"tempo\": \"$tempo\",
+        \"limit\": \"1\"
+    }}"
+    echo $track
 }
 
 # Display information about a track
