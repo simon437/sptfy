@@ -25,6 +25,7 @@ Options:
    -r,                         Get recommendations (default=song)
        [song [count]],         Recommendations based on the current playing track. Default
                                is 1 song to queue. Can be passed as count from 1 - 20.
+       [song custom],          Allows to tweak the recommendation parameters
        [artist],               [TODO] Recommendations based on the current playing artist
        [playlist]              [TODO] Recommendations based on the current playing playlist
    

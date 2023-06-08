@@ -241,18 +241,18 @@ getTrackFeatures() {
     local tempo=$(echo $response | jq -r '.tempo')
 
     local track="{ \"track\" : { 
-        \"id\": \"$id\", 
-        \"name\": \"$name\",
-        \"artists\": \"$artists\",
-        \"artists_id\": \"$artists_id\",
-        \"popularity\": \"$popularity\",
-        \"danceability\": \"$danceability\",
-        \"energy\": \"$energy\",
-        \"speechiness\": \"$speechiness\",
-        \"instrumentalness\": \"$instrumentalness\",
-        \"liveness\": \"$liveness\",
-        \"valence\": \"$valence\",
-        \"tempo\": \"$tempo\",
+        \"track_name\": \"$name\",
+        \"artists_name\": \"$artists\",
+        \"seed_tracks\": \"$id\", 
+        \"seed_artists\": \"$artists_id\",
+        \"target_popularity\": \"$popularity\",
+        \"target_danceability\": \"$danceability\",
+        \"target_energy\": \"$energy\",
+        \"target_speechiness\": \"$speechiness\",
+        \"target_instrumentalness\": \"$instrumentalness\",
+        \"target_liveness\": \"$liveness\",
+        \"target_valence\": \"$valence\",
+        \"target_tempo\": \"$tempo\",
         \"limit\": \"1\"
     }}"
     echo $track

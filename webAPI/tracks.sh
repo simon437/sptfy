@@ -52,21 +52,20 @@ getRecommendationsByFeatures() {
         local features=$1
     fi
 
-    local limit=$(echo $features | jq -r '.track.limit')
-    local seed_artists=$(echo $features | jq -r '.track.artists_id')
-    local seed_tracks=$(echo $features | jq -r '.track.id')
-    local danceability=$(echo $features | jq -r '.track.danceability')
-    local energy=$(echo $features | jq -r '.track.energy')
-    local speechiness=$(echo $features | jq -r '.track.speechiness')
-    local instrumentalness=$(echo $features | jq -r '.track.instrumentalness')
-    local liveness=$(echo $features | jq -r '.track.liveness')
-    local popularity=$(echo $features | jq -r '.track.popularity')
-    local tempo=$(echo $features| jq -r '.track.tempo')
-    local valence=$(echo $features| jq -r '.track.valence')
-
     local access_token=$(get_access_token) 
     local endpoint="https://api.spotify.com/v1/recommendations"
-    local url="$endpoint?limit=$limit&seed_artists=$seed_artists&seed_tracks=$seed_tracks&target_danceability=$danceability&target_energy=$energy&target_speechiness=$speechiness&target_instrumentalness=$instrumentalness&target_liveness=$liveness&target_popularity=$popularity&target_tempo=$tempo&target_valence=$valence"
+    local url="$endpoint?"
+    
+    for key in $(echo $features | jq -r '.track | keys[]'); do
+        val=$(echo $track | jq -r ".track.$key")
+        if [ "$val" != "#" ]; then
+            url+="$key=$val&"
+        fi
+    done
+
+    # remove trailing &
+    url=$(echo $url | sed -E 's/&$//')
+
     event_handler INFO $LINENO "[track] Get track recommendations by features"
     local response=$(curl -s --request GET \
         --url "$url" \
